@@ -89,7 +89,7 @@ export async function POST(req: NextRequest) {
 
     const { data: wallet, error: walletError } = await supabase
       .from("wallets")
-      .select("circle_wallet_id")
+      .select("id, circle_wallet_id")
       .eq("profile_id", profile.id)
       .single();
 
@@ -128,6 +128,23 @@ export async function POST(req: NextRequest) {
     const transaction = response.data;
     if (!transaction?.id) {
       throw new Error("Circle did not return a transaction id");
+    }
+
+    const { error: transactionError } = await supabase
+      .from("transactions")
+      .insert({
+        wallet_id: wallet.id,
+        profile_id: profile.id,
+        circle_transaction_id: transaction.id,
+        transaction_type: "OUTBOUND",
+        amount: parsed.data.amount,
+        currency: "USDC",
+        status: transaction.state ?? "INITIATED",
+        description: `USDC withdrawal to ${parsed.data.destinationAddress}`,
+      });
+
+    if (transactionError) {
+      console.error("Failed to persist outbound transfer:", transactionError);
     }
 
     return NextResponse.json(
