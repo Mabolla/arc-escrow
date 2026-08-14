@@ -38,13 +38,23 @@ const TransferSchema = z.object({
     .string()
     .trim()
     .regex(/^\d+(?:\.\d{1,6})?$/, "Amount must have at most 6 decimal places")
-    .refine((value) => toUsdcUnits(value) > 0n, "Amount must be greater than zero"),
+    .refine((value) => toUsdcUnits(value) !== "0", "Amount must be greater than zero"),
 });
 
-function toUsdcUnits(value: string): bigint {
+function toUsdcUnits(value: string): string {
   const [whole, fraction = ""] = value.split(".");
+  const normalizedWhole = whole.replace(/^0+(?=\d)/, "");
   const paddedFraction = fraction.padEnd(USDC_DECIMALS, "0");
-  return BigInt(whole) * 10n ** BigInt(USDC_DECIMALS) + BigInt(paddedFraction || "0");
+  const units = `${normalizedWhole}${paddedFraction}`.replace(/^0+(?=\d)/, "");
+  return units || "0";
+}
+
+function isGreaterThan(left: string, right: string): boolean {
+  if (left.length !== right.length) {
+    return left.length > right.length;
+  }
+
+  return left > right;
 }
 
 export async function POST(req: NextRequest) {
@@ -99,7 +109,7 @@ export async function POST(req: NextRequest) {
     const available = toUsdcUnits(usdcBalance?.amount ?? "0");
     const requested = toUsdcUnits(parsed.data.amount);
 
-    if (requested > available) {
+    if (isGreaterThan(requested, available)) {
       return NextResponse.json(
         { error: "Insufficient USDC balance" },
         { status: 400 },
