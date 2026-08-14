@@ -16,6 +16,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+import { randomUUID } from "crypto";
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { circleDeveloperSdk } from "@/lib/utils/developer-controlled-wallets-client";
@@ -38,7 +39,10 @@ const TransferSchema = z.object({
     .string()
     .trim()
     .regex(/^\d+(?:\.\d{1,6})?$/, "Amount must have at most 6 decimal places")
-    .refine((value) => toUsdcUnits(value) !== "0", "Amount must be greater than zero"),
+    .refine(
+      (value) => toUsdcUnits(value) !== "0",
+      "Amount must be greater than zero",
+    ),
 });
 
 function toUsdcUnits(value: string): string {
@@ -97,6 +101,18 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Wallet not found" }, { status: 404 });
     }
 
+    const addressValidation = await circleDeveloperSdk.validateAddress({
+      address: parsed.data.destinationAddress,
+      blockchain: "ARC-TESTNET",
+    });
+
+    if (!addressValidation.data?.isValid) {
+      return NextResponse.json(
+        { error: "Destination address is not valid for Arc Testnet" },
+        { status: 400 },
+      );
+    }
+
     const balanceResponse = await circleDeveloperSdk.getWalletTokenBalance({
       id: wallet.circle_wallet_id,
       includeAll: true,
@@ -117,6 +133,7 @@ export async function POST(req: NextRequest) {
     }
 
     const response = await circleDeveloperSdk.createTransaction({
+      idempotencyKey: randomUUID(),
       amounts: [parsed.data.amount],
       destinationAddress: parsed.data.destinationAddress,
       tokenAddress: ARC_TESTNET_USDC,
@@ -137,7 +154,7 @@ export async function POST(req: NextRequest) {
         profile_id: profile.id,
         circle_transaction_id: transaction.id,
         transaction_type: "OUTBOUND",
-        amount: parsed.data.amount,
+        amount: Number(parsed.data.amount),
         currency: "USDC",
         status: transaction.state ?? "INITIATED",
         description: `USDC withdrawal to ${parsed.data.destinationAddress}`,
