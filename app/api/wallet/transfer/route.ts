@@ -19,21 +19,37 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { circleDeveloperSdk } from "@/lib/utils/developer-controlled-wallets-client";
-import { createSupabaseServerComponentClient } from "@/lib/supabase/server-client";
+import { createSupabaseServerClient } from "@/lib/supabase/server-client";
 
 const ARC_TESTNET_USDC = "0x3600000000000000000000000000000000000000";
+const ZERO_ADDRESS = "0x0000000000000000000000000000000000000000";
+const USDC_DECIMALS = 6;
 
 const TransferSchema = z.object({
-  destinationAddress: z.string().regex(/^0x[a-fA-F0-9]{40}$/, "Invalid destination address"),
-  amount: z.string().refine(value => {
-    const parsed = Number(value);
-    return Number.isFinite(parsed) && parsed > 0;
-  }, "Amount must be greater than zero"),
+  destinationAddress: z
+    .string()
+    .trim()
+    .regex(/^0x[a-fA-F0-9]{40}$/, "Invalid destination address")
+    .refine(
+      (address) => address.toLowerCase() !== ZERO_ADDRESS,
+      "Destination address cannot be the zero address",
+    ),
+  amount: z
+    .string()
+    .trim()
+    .regex(/^\d+(?:\.\d{1,6})?$/, "Amount must have at most 6 decimal places")
+    .refine((value) => toUsdcUnits(value) > 0n, "Amount must be greater than zero"),
 });
+
+function toUsdcUnits(value: string): bigint {
+  const [whole, fraction = ""] = value.split(".");
+  const paddedFraction = fraction.padEnd(USDC_DECIMALS, "0");
+  return BigInt(whole) * 10n ** BigInt(USDC_DECIMALS) + BigInt(paddedFraction || "0");
+}
 
 export async function POST(req: NextRequest) {
   try {
-    const supabase = createSupabaseServerComponentClient();
+    const supabase = createSupabaseServerClient();
     const {
       data: { user },
       error: authError,
@@ -80,11 +96,14 @@ export async function POST(req: NextRequest) {
       ({ token }) => token.symbol === "USDC",
     );
 
-    const available = Number(usdcBalance?.amount ?? "0");
-    const requested = Number(parsed.data.amount);
+    const available = toUsdcUnits(usdcBalance?.amount ?? "0");
+    const requested = toUsdcUnits(parsed.data.amount);
 
     if (requested > available) {
-      return NextResponse.json({ error: "Insufficient USDC balance" }, { status: 400 });
+      return NextResponse.json(
+        { error: "Insufficient USDC balance" },
+        { status: 400 },
+      );
     }
 
     const response = await circleDeveloperSdk.createTransaction({
@@ -101,10 +120,13 @@ export async function POST(req: NextRequest) {
       throw new Error("Circle did not return a transaction id");
     }
 
-    return NextResponse.json({
-      transactionId: transaction.id,
-      state: transaction.state,
-    }, { status: 201 });
+    return NextResponse.json(
+      {
+        transactionId: transaction.id,
+        state: transaction.state,
+      },
+      { status: 201 },
+    );
   } catch (error) {
     console.error("Error transferring USDC:", error);
     return NextResponse.json(
