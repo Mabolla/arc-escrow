@@ -24,6 +24,7 @@ import { EscrowAgreements } from "@/components/escrow-agreements";
 import { WalletBalance } from "@/components/wallet-balance";
 import { RequestUsdcButton } from "@/components/request-usdc-button";
 import { USDCButton } from "@/components/usdc-button";
+import { WithdrawUsdcDialog } from "@/components/withdraw-usdc-dialog";
 import dynamic from "next/dynamic";
 import { WalletInformationDialog } from "@/components/wallet-information-dialog";
 
@@ -69,9 +70,10 @@ export default async function ProtectedPage() {
                   <WalletBalance walletId={wallet?.circle_wallet_id} />
                 </h1>
               </div>
-              <div className="flex gap-2">
+              <div className="flex flex-wrap gap-2">
                 <USDCButton className="flex-1" mode="BUY" walletAddress={wallet?.wallet_address} />
                 <USDCButton className="flex-1" mode="SELL" walletAddress={wallet?.wallet_address} />
+                <WithdrawUsdcDialog />
                 {process.env.NODE_ENV === "development" && <RequestUsdcButton walletAddress={wallet?.wallet_address} />}
               </div>
             </div>
